@@ -2,7 +2,7 @@
 
 # Configuration
 # Also update MLFLOW_VERSION in .github/workflows/go.yaml when changing this
-MLFLOW_VERSION ?= 3.15.2
+MLFLOW_VERSION ?= 3.17.0
 # To run against Red Hat midstream (opendatahub-io/mlflow), use: make dev/up-midstream
 # Change MLFLOW_MIDSTREAM_REF to a tag (e.g., v3.9.0-rh1) when available
 MLFLOW_MIDSTREAM_REF ?= master

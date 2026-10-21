@@ -18,15 +18,16 @@ import (
 
 // Prompt tag keys used by MLflow to store prompt metadata.
 const (
-	tagPromptText  = "mlflow.prompt.text"
-	tagIsPrompt    = "mlflow.prompt.is_prompt"
-	tagPromptType  = "_mlflow_prompt_type"
-	tagDescription = "mlflow.prompt.description"
-	tagModelConfig = "_mlflow_prompt_model_config"
-	promptTypeText = "text"
-	promptTypeChat = "chat"
-	aliasTagPrefix = "mlflow.prompt.alias."
-	aliasLatest    = "latest"
+	tagPromptText           = "mlflow.prompt.text"
+	tagIsPrompt             = "mlflow.prompt.is_prompt"
+	tagPromptType           = "_mlflow_prompt_type"
+	tagDescription          = "mlflow.prompt.description"
+	tagModelConfig          = "_mlflow_prompt_model_config"
+	promptTypeText          = "text"
+	promptTypeChat          = "chat"
+	promptSourcePlaceholder = "dummy-source"
+	aliasTagPrefix          = "mlflow.prompt.alias."
+	aliasLatest             = "latest"
 )
 
 // Client provides access to the MLflow Prompt Registry.
@@ -396,7 +397,7 @@ func (c *Client) createTextPromptVersion(ctx context.Context, name, template str
 		tags = append(tags, &mlflowpb.ModelVersionTag{Key: conv.Ptr(k), Value: conv.Ptr(v)})
 	}
 
-	source := "mlflow-artifacts:/" + name
+	source := promptSourcePlaceholder
 	req := &mlflowpb.CreateModelVersion{
 		Name:        &name,
 		Source:      &source,
@@ -444,7 +445,7 @@ func (c *Client) createChatPromptVersion(ctx context.Context, name string, messa
 		tags = append(tags, &mlflowpb.ModelVersionTag{Key: conv.Ptr(k), Value: conv.Ptr(v)})
 	}
 
-	source := "mlflow-artifacts:/" + name
+	source := promptSourcePlaceholder
 	req := &mlflowpb.CreateModelVersion{
 		Name:        &name,
 		Source:      &source,

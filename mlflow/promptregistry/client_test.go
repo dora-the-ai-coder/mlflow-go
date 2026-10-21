@@ -183,6 +183,7 @@ func TestLoadPrompt_NoVersions(t *testing.T) {
 
 func TestRegisterPrompt_NewPrompt(t *testing.T) {
 	var createModelCalled, createVersionCalled bool
+	var receivedSource string
 
 	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -197,6 +198,13 @@ func TestRegisterPrompt_NewPrompt(t *testing.T) {
 			})
 		case "/api/2.0/mlflow/model-versions/create":
 			createVersionCalled = true
+			var req struct {
+				Source string `json:"source"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode model version request: %v", err)
+			}
+			receivedSource = req.Source
 			json.NewEncoder(w).Encode(map[string]any{
 				"model_version": map[string]any{
 					"name":                   "new-prompt",
@@ -230,6 +238,9 @@ func TestRegisterPrompt_NewPrompt(t *testing.T) {
 	if !createVersionCalled {
 		t.Error("expected model-versions/create to be called")
 	}
+	if receivedSource != "dummy-source" {
+		t.Errorf("Source = %q, want %q", receivedSource, "dummy-source")
+	}
 	if prompt.Name != "new-prompt" {
 		t.Errorf("Name = %q, want %q", prompt.Name, "new-prompt")
 	}
@@ -238,6 +249,55 @@ func TestRegisterPrompt_NewPrompt(t *testing.T) {
 	}
 	if prompt.Template != "Hello, {{name}}!" {
 		t.Errorf("Template = %q, want %q", prompt.Template, "Hello, {{name}}!")
+	}
+}
+
+func TestRegisterChatPrompt_NewPrompt(t *testing.T) {
+	var receivedSource string
+
+	client := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/api/2.0/mlflow/registered-models/create":
+			json.NewEncoder(w).Encode(map[string]any{
+				"registered_model": map[string]any{"name": "new-chat-prompt"},
+			})
+		case "/api/2.0/mlflow/model-versions/create":
+			var req struct {
+				Source string `json:"source"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Errorf("decode model version request: %v", err)
+			}
+			receivedSource = req.Source
+			json.NewEncoder(w).Encode(map[string]any{
+				"model_version": map[string]any{
+					"name":    "new-chat-prompt",
+					"version": "1",
+					"tags": []map[string]string{
+						{"key": "mlflow.prompt.text", "value": `[{"role":"user","content":"Hello"}]`},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	prompt, err := client.RegisterChatPrompt(
+		context.Background(),
+		"new-chat-prompt",
+		[]ChatMessage{{Role: "user", Content: "Hello"}},
+	)
+	if err != nil {
+		t.Fatalf("RegisterChatPrompt() error = %v", err)
+	}
+	if prompt.Version != 1 {
+		t.Errorf("Version = %d, want %d", prompt.Version, 1)
+	}
+	if receivedSource != "dummy-source" {
+		t.Errorf("Source = %q, want %q", receivedSource, "dummy-source")
 	}
 }
 
