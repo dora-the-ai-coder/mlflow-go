@@ -112,8 +112,12 @@ issue-to-PR flow, subject to Fullsend's authorization checks and repository CI.
 
 Extend issue-driven coding to non-Done RHAI epics labeled `fs-integration` using
 a separate scheduled Jira poller. The label is the readiness signal; authorized
-label additions, labeled epic creation, and `/fs-code` comments dispatch the code
-agent. Pin the Jira-capable code harness, retain Pi/OpenAI and GitHub dispatch,
+label additions and `/fs-code` comments dispatch the code agent. Synthetic
+creation events are excluded because the pinned poller reports current labels
+and the reporter rather than the original readiness actor. Each record starts
+a separate workflow run to avoid shared artifact names; execution requires the
+exact polling SHA and a validated main-branch poll artifact. Pin the Jira-capable
+code harness, retain Pi/OpenAI and GitHub dispatch,
 and restrict generated PRs to `main`. Epic children provide implementation
 context rather than independent dispatches. Jira project-role authorization and
 checkpoint writes are additional activation requirements. See the

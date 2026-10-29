@@ -13,8 +13,7 @@ trigger: >
     && event.actor.role in ["write", "admin"]
     && "fs-integration" in event.state.labels
     && (
-      event.transition.kind == "opened"
-      || (event.transition.kind == "label_changed"
+      (event.transition.kind == "label_changed"
         && event.transition.label.name == "fs-integration"
         && event.transition.label.action == "added")
       || (event.transition.kind == "comment_added"

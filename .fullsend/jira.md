@@ -15,11 +15,14 @@ the coding work items; their children supply context, not separate dispatches.
 An RHAI user with a project role named `Developers` or `Administrators` can:
 
 - Add `fs-integration` to an existing epic to start coding.
-- Create an epic with that label to start coding.
 - Comment `/fs-code` on a labeled epic to retry or request a new run.
 
 The label is this repository's readiness signal; `ready-to-code` is not also
-required. Ordinary comments and other label changes do not trigger coding.
+required. Creating an already-labeled epic does not start coding: post `/fs-code`
+or remove and re-add the label with an authorized account. The pinned poller
+synthesizes creation events from current labels and the reporter, which cannot
+establish who added the readiness label. Ordinary comments and other label
+changes do not trigger coding.
 The poller excludes its own service account, and the local trigger requires a
 human with `write` or `admin` authorization. Done epics and unlabeled epics are
 excluded. The agent rechecks the live epic before editing code.
@@ -51,8 +54,10 @@ instead of a code change; the agent must not invent a complete implementation.
    maps `Developers` to `write` and `Administrators` to `admin`; custom role
    names do not imply write access. This authorization uses Jira membership,
    not membership in the GitHub repository.
-5. Merge to `main`. Scheduled runs use the default branch; manual runs also
-   check out `main`. Fork workflows are blocked by the repository guard.
+5. Obtain maintainer approval for the protected workflow changes described in
+   [implementation issue #45](https://github.com/opendatahub-io/mlflow-go/issues/45),
+   then merge to `main`. Both workflows reject manual runs on other branches and
+   fork repositories. Polling checks out the run’s exact `github.sha`.
 6. Add the label to a small, well-scoped RHAI epic, then run **Actions → Fullsend
    RHAI epic coding → Run workflow**, or wait for the scheduled poll. Verify the
    poll dispatches `code`, the sandbox reads Jira, and a linked GitHub PR is
@@ -74,10 +79,35 @@ enabled: an authorized user should post `/fs-code` or remove and re-add the
 label. The same applies to missed events after an outage longer than 24 hours.
 
 Workflow-level concurrency serializes manual and scheduled discovery/dispatch.
-An empty dispatch list skips the coding job; malformed poll output fails the
-workflow. Polling checkpoints are not an exactly-once delivery guarantee. If
+Each dispatch record launches its own **Fullsend RHAI epic execution** workflow
+run, with exactly one `code` matrix entry. This avoids the pinned action's
+shared `fullsend-code` artifact name colliding across epics. The poll job needs
+`actions: write` to launch these runs using its repository `GITHUB_TOKEN`.
+All records are retained for seven days in the poll's `jira-dispatches-<attempt>`
+artifact. If one launch request fails, remaining records are still attempted and
+the poll fails visibly. An empty dispatch list launches no runs; malformed poll
+output fails the workflow.
+
+Execution accepts only a poll run ID, attempt, and record index. Before any Jira
+or inference secrets are passed to the code job, it verifies that the artifact
+came from this repository's main-branch poll workflow, then selects one record.
+It also requires the poll's exact SHA to equal the execution run's `github.sha`,
+which the reusable dispatcher uses for configuration. If `main` moves between
+polling and execution, the execution run fails before starting the agent. Inspect
+the poll artifact and post a fresh authorized `/fs-code` comment to retry at the
+new revision. Every child execution run must be monitored separately: a green
+poll means launches succeeded, not that coding succeeded.
+
+Polling checkpoints are not an exactly-once delivery guarantee. If
 dispatch or coding fails after checkpointing, inspect the run and retry with a
-fresh `/fs-code` comment. Check for an existing PR first. Removing the label
+fresh `/fs-code` comment. Check for an existing PR first. Rerunning the parent
+poll reads the advanced Jira checkpoints; it does not replay its saved records.
+For a failed launch while `main` is still at the polling SHA, a maintainer may
+manually run **Fullsend RHAI epic execution** on `main` with the original poll
+run ID, attempt, and failed record's zero-based index. Replay only failed records:
+an accepted launch can still return a network error, so check child runs before
+retrying. Parent reruns change the attempt and invalidate older artifact replays;
+a fresh `/fs-code` is the recovery path if the revision or attempt has changed. Removing the label
 prevents future discovery but does not cancel an already running job; cancel
 that Actions run explicitly if needed.
 
@@ -99,7 +129,7 @@ agent implementation. The existing GitHub code stage also uses this code harness
 the Jira overlay and local epic skill apply only to Jira source events.
 
 Validate configuration with `fullsend agent list --fullsend-dir .fullsend`,
-workflow syntax with `actionlint .github/workflows/fullsend-poll-jira.yaml`, and
+workflow syntax with `actionlint .github/workflows/fullsend*.yaml`, and
 CEL routing with `fullsend dispatch --input-driver json --input-file <fixture>
 --config-dir .fullsend`. Synthetic dispatch tests establish routing, not live
 Jira connectivity, sandbox credential injection, or end-to-end PR creation.
@@ -108,12 +138,14 @@ Run the routing regression cases with the pinned CLI on your path:
 
 ```bash
 python3 .fullsend/tests/test_jira_dispatch.py
+python3 .fullsend/tests/test_jira_workflows.py
 ```
 
 Set `FULLSEND_BIN` to use an explicit binary path. The cases cover activation,
 retry, ordinary comments, label removal, authorization, and repo/project/tenant
-boundaries. The CLI may fetch the pinned public harness into `.fullsend-cache/`;
-do not commit that generated cache.
+boundaries, plus two-epic fan-out, partial launch failure, provenance, and revision
+mismatch rejection. The CLI may fetch the pinned public harness into
+`.fullsend-cache/`; do not commit that generated cache.
 
 References:
 

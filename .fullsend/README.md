@@ -55,8 +55,9 @@ applies its triage/coding eligibility and authorization rules. Issue comments
 support `/fs-triage` and `/fs-code`.
 
 The separate [RHAI epic-to-code workflow](jira.md) polls non-Done RHAI epics
-labeled `fs-integration`. Adding the label, creating a labeled epic, or posting
-`/fs-code` triggers coding when the Jira actor is authorized. Jira credentials
+labeled `fs-integration`. Adding the label or posting `/fs-code` triggers coding
+when the Jira actor is authorized. An epic created with the label still needs
+one of those explicit actions. Jira credentials
 and project-role setup are required before activation. The code harness is
 pinned to a Jira-capable agent revision; GitHub issue coding remains enabled.
 

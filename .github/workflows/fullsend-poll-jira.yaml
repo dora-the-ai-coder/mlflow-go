@@ -14,18 +14,16 @@ concurrency:
 
 jobs:
   poll:
-    if: github.repository == 'opendatahub-io/mlflow-go'
+    if: github.repository == 'opendatahub-io/mlflow-go' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-      has_dispatches: ${{ steps.matrix.outputs.has_dispatches }}
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Install pinned Fullsend
@@ -53,46 +51,16 @@ jobs:
             --output dispatches.json \
             --fullsend-dir .fullsend
 
-      - name: Build dispatch matrix
-        id: matrix
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Invalid output is a failure, not a successful empty poll.
-          jq -e 'type == "array"' dispatches.json > /dev/null
-          matrix=$(jq -c '{include: .}' dispatches.json)
-          delimiter="MATRIX_$(openssl rand -hex 16)"
-          {
-            echo "matrix<<${delimiter}"
-            printf '%s\n' "${matrix}"
-            echo "${delimiter}"
-            echo "has_dispatches=$(jq 'length > 0' dispatches.json)"
-          } >> "${GITHUB_OUTPUT}"
+      # Retain every checkpointed record, including when a dispatch API call fails.
+      - name: Save poll records
+        uses: actions/upload-artifact@v4
+        with:
+          name: jira-dispatches-${{ github.run_attempt }}
+          path: dispatches.json
+          if-no-files-found: error
+          retention-days: 7
 
-  code:
-    needs: poll
-    if: needs.poll.outputs.has_dispatches == 'true'
-    permissions:
-      actions: write
-      id-token: write
-      contents: write
-      issues: write
-      packages: read
-      pull-requests: write
-    uses: fullsend-ai/fullsend/.github/workflows/reusable-dispatch.yml@af8cd4756172ec105c3aa523515c9c7d51684e90
-    with:
-      matrix: ${{ needs.poll.outputs.matrix }}
-      mint_url: ${{ vars.FULLSEND_MINT_URL }}
-      gcp_region: ${{ vars.FULLSEND_GCP_REGION }}
-      jira_base_url: https://redhat.atlassian.net
-      runner_image: ubuntu-24.04
-    secrets:
-      JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
-      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
-      FULLSEND_GCP_WIF_PROVIDER: ${{ secrets.FULLSEND_GCP_WIF_PROVIDER }}
-      FULLSEND_GCP_PROJECT_ID: ${{ secrets.FULLSEND_GCP_PROJECT_ID }}
-      FULLSEND_OPENAI_API_KEY: ${{ secrets.FULLSEND_OPENAI_API_KEY }}
-      FULLSEND_INFERENCE_GATEWAY_API_KEY: ${{ secrets.FULLSEND_INFERENCE_GATEWAY_API_KEY }}
-      FULLSEND_GITHUB_RUNNER_SECRETS: ${{ secrets.FULLSEND_GITHUB_RUNNER_SECRETS }}
-      OTEL_EXPORTER_OTLP_TRACES_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_TRACES_HEADERS }}
-      OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+      - name: Launch one workflow run per record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .fullsend/scripts/jira_dispatch.py launch
