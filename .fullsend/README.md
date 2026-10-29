@@ -49,11 +49,17 @@ organization administrator must complete these steps before the first run:
 Review runs respond to non-draft PR opens, pushes, readiness events,
 `ready-for-review` labels, and `/fs-review`. Fix runs route requested-change
 reviews and `/fs-fix` through Fullsend's own authorization and eligibility checks.
-There are no Jira or CodeRabbit host adapters in this configuration.
+There are no CodeRabbit host adapters in this configuration.
 Issue opened, edited, and labeled events reach the reusable dispatcher, which
 applies its triage/coding eligibility and authorization rules. Issue comments
-support `/fs-triage` and `/fs-code`. This setup targets GitHub issues; Jira-driven
-work requires additional configuration.
+support `/fs-triage` and `/fs-code`.
+
+The separate [RHAI epic-to-code workflow](jira.md) polls non-Done RHAI epics
+labeled `fs-integration`. Adding the label or posting `/fs-code` triggers coding
+when the Jira actor is authorized. An epic created with the label still needs
+one of those explicit actions. Jira credentials
+and project-role setup are required before activation. The code harness is
+pinned to a Jira-capable agent revision; GitHub issue coding remains enabled.
 
 ## Validation and maintenance
 

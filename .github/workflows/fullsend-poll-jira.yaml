@@ -1,0 +1,66 @@
+name: Fullsend RHAI epic coding
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Serialize discovery and dispatch, including manual runs.
+concurrency:
+  group: fullsend-rhai-epic-coding
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    if: github.repository == 'opendatahub-io/mlflow-go' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Install pinned Fullsend
+        uses: fullsend-ai/fullsend/.github/actions/install-fullsend-cli@af8cd4756172ec105c3aa523515c9c7d51684e90
+        with:
+          mode: upstream
+          workflow_repository: fullsend-ai/fullsend
+          workflow_sha: af8cd4756172ec105c3aa523515c9c7d51684e90
+
+      - name: Poll opted-in RHAI epics
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_BASE_URL: https://redhat.atlassian.net
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${JIRA_TOKEN}" && -n "${JIRA_USER_EMAIL}" ]] || { echo 'Configure JIRA_TOKEN and JIRA_USER_EMAIL Actions secrets.' >&2; exit 1; }
+          fullsend poll \
+            --input-driver jira-poll \
+            --jira-url "${JIRA_BASE_URL}" \
+            --jira-project RHAI \
+            --jql 'project = RHAI AND issuetype = Epic AND labels = "fs-integration" AND statusCategory != Done ORDER BY updated DESC' \
+            --target-repo opendatahub-io/mlflow-go \
+            --output dispatches.json \
+            --fullsend-dir .fullsend
+
+      # Retain every checkpointed record, including when a dispatch API call fails.
+      - name: Save poll records
+        uses: actions/upload-artifact@v4
+        with:
+          name: jira-dispatches-${{ github.run_attempt }}
+          path: dispatches.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Launch one workflow run per record
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .fullsend/scripts/jira_dispatch.py launch
