@@ -8,6 +8,7 @@ roles:
   - coder
 agents:
   - name: code
+    source: harness/code.yaml
     model: openai/gpt-6.1-sol
   - name: triage
     model: openai/gpt-6-luna

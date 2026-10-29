@@ -1,0 +1,98 @@
+name: Fullsend RHAI epic coding
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Serialize discovery and dispatch, including manual runs.
+concurrency:
+  group: fullsend-rhai-epic-coding
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    if: github.repository == 'opendatahub-io/mlflow-go'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      has_dispatches: ${{ steps.matrix.outputs.has_dispatches }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Install pinned Fullsend
+        uses: fullsend-ai/fullsend/.github/actions/install-fullsend-cli@af8cd4756172ec105c3aa523515c9c7d51684e90
+        with:
+          mode: upstream
+          workflow_repository: fullsend-ai/fullsend
+          workflow_sha: af8cd4756172ec105c3aa523515c9c7d51684e90
+
+      - name: Poll opted-in RHAI epics
+        env:
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_BASE_URL: https://redhat.atlassian.net
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${JIRA_TOKEN}" && -n "${JIRA_USER_EMAIL}" ]] || { echo 'Configure JIRA_TOKEN and JIRA_USER_EMAIL Actions secrets.' >&2; exit 1; }
+          fullsend poll \
+            --input-driver jira-poll \
+            --jira-url "${JIRA_BASE_URL}" \
+            --jira-project RHAI \
+            --jql 'project = RHAI AND issuetype = Epic AND labels = "fs-integration" AND statusCategory != Done ORDER BY updated DESC' \
+            --target-repo opendatahub-io/mlflow-go \
+            --output dispatches.json \
+            --fullsend-dir .fullsend
+
+      - name: Build dispatch matrix
+        id: matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Invalid output is a failure, not a successful empty poll.
+          jq -e 'type == "array"' dispatches.json > /dev/null
+          matrix=$(jq -c '{include: .}' dispatches.json)
+          delimiter="MATRIX_$(openssl rand -hex 16)"
+          {
+            echo "matrix<<${delimiter}"
+            printf '%s\n' "${matrix}"
+            echo "${delimiter}"
+            echo "has_dispatches=$(jq 'length > 0' dispatches.json)"
+          } >> "${GITHUB_OUTPUT}"
+
+  code:
+    needs: poll
+    if: needs.poll.outputs.has_dispatches == 'true'
+    permissions:
+      actions: write
+      id-token: write
+      contents: write
+      issues: write
+      packages: read
+      pull-requests: write
+    uses: fullsend-ai/fullsend/.github/workflows/reusable-dispatch.yml@af8cd4756172ec105c3aa523515c9c7d51684e90
+    with:
+      matrix: ${{ needs.poll.outputs.matrix }}
+      mint_url: ${{ vars.FULLSEND_MINT_URL }}
+      gcp_region: ${{ vars.FULLSEND_GCP_REGION }}
+      jira_base_url: https://redhat.atlassian.net
+      runner_image: ubuntu-24.04
+    secrets:
+      JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+      FULLSEND_GCP_WIF_PROVIDER: ${{ secrets.FULLSEND_GCP_WIF_PROVIDER }}
+      FULLSEND_GCP_PROJECT_ID: ${{ secrets.FULLSEND_GCP_PROJECT_ID }}
+      FULLSEND_OPENAI_API_KEY: ${{ secrets.FULLSEND_OPENAI_API_KEY }}
+      FULLSEND_INFERENCE_GATEWAY_API_KEY: ${{ secrets.FULLSEND_INFERENCE_GATEWAY_API_KEY }}
+      FULLSEND_GITHUB_RUNNER_SECRETS: ${{ secrets.FULLSEND_GITHUB_RUNNER_SECRETS }}
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_TRACES_HEADERS }}
+      OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
